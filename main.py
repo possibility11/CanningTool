@@ -13,11 +13,101 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtCore import QThread, pyqtSignal,QObject
 from PyQt5.QtGui import QTextCursor, QPalette, QColor, QFont, QIcon, QPixmap
 import sys  # 导入sys模块
+import logging
+import os
+from pathlib import Path
+
+
+# ------------------------------
+# 日志处理（优化滚动条样式）
+# ------------------------------
+class QTextEditLogger(logging.Handler):
+    def __init__(self, text_edit):
+        super().__init__()
+        self.text_edit = text_edit
+        self.text_edit.setReadOnly(True)
+        self.formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        # 日志框样式：调整圆角为4px，添加滚动条样式
+        self.text_edit.setStyleSheet("""
+            QTextEdit {
+                background-color: #f8f9fa;
+                border: 1px solid #dee2e6;
+                border-radius: 4px; /* 圆角缩小 */
+                padding: 10px;
+                font-family: "Microsoft YaHei", Arial, sans-serif;
+                font-size: 13px;
+                color: #212529;
+            }
+            /* 滚动条样式 */
+            QScrollBar:vertical {
+                border: none;
+                background: #f1f1f1;
+                width: 8px;
+                border-radius: 4px;
+            }
+            QScrollBar::handle:vertical {
+                background: #c1c1c1;
+                border-radius: 4px;
+                min-height: 20px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #a8a8a8;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                border: none;
+                background: none;
+            }
+            QScrollBar:horizontal {
+                border: none;
+                background: #f1f1f1;
+                height: 8px;
+                border-radius: 4px;
+            }
+            QScrollBar::handle:horizontal {
+                background: #c1c1c1;
+                border-radius: 4px;
+                min-width: 20px;
+            }
+            QScrollBar::handle:horizontal:hover {
+                background: #a8a8a8;
+            }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+                border: none;
+                background: none;
+            }
+        """)
+
+    def emit(self, record):
+        msg = self.format(record)
+        self.text_edit.moveCursor(QTextCursor.MoveOperation.End)
+        self.text_edit.insertPlainText(msg + '\n')
+        self.text_edit.moveCursor(QTextCursor.MoveOperation.End)
+
+
 
 class Ui_MainWindow(QMainWindow):
     def __init__(self, parent=None):
         super(Ui_MainWindow, self).__init__(parent)
         self.selected_env = "pre"
+        # ------------------------------
+        # 关键：获取程序实际安装目录（兼容开发/打包环境）
+        # ------------------------------
+        if getattr(sys, 'frozen', False):
+            # 打包后的 exe 环境：sys.frozen 为 True，_MEIPASS 是临时解压目录（单文件模式）
+            # 但我们需要 exe 本身所在的目录，而非临时目录
+            self.app_path = os.path.dirname(sys.executable)  # 获取 exe 所在目录
+        else:
+            # 开发环境：获取当前脚本所在目录
+            self.app_path = os.path.dirname(os.path.abspath(__file__))
+
+        # 转换为 Path 对象（可选，方便路径拼接）
+        self.app_path = Path(self.app_path)
+
+        self.key_files = []
+        self.selected_folder = ""
+        self.encrypt_thread = None
+        self.pubkey_path = ""
+
         self.setupUi(self)  # 初始化窗体设置
         self.set_style()
     def setupUi(self, MainWindow):
@@ -57,9 +147,14 @@ class Ui_MainWindow(QMainWindow):
         self.horizontalLayout_2.addWidget(self.label_2)
         self.radioButton = QtWidgets.QRadioButton(self.groupBox_2)
         self.radioButton.setObjectName("radioButton")
+        self.radioButton.setChecked(True)
+        self.radioButton.toggled.connect(lambda checked: self.set_env("pre") if checked else None)
+
         self.horizontalLayout_2.addWidget(self.radioButton)
         self.radioButton_2 = QtWidgets.QRadioButton(self.groupBox_2)
         self.radioButton_2.setObjectName("radioButton_2")
+        self.radioButton_2.toggled.connect(lambda checked: self.set_env("formal") if checked else None)
+
         self.horizontalLayout_2.addWidget(self.radioButton_2)
         self.verticalLayout_2.addLayout(self.horizontalLayout_2)
         self.horizontalLayout_3 = QtWidgets.QHBoxLayout()
@@ -78,6 +173,7 @@ class Ui_MainWindow(QMainWindow):
         self.verticalLayout_3.setObjectName("verticalLayout_3")
         self.textEdit = QtWidgets.QTextEdit(self.groupBox_3)
         self.textEdit.setObjectName("textEdit")
+
         self.verticalLayout_3.addWidget(self.textEdit)
         self.verticalLayout_4.addWidget(self.groupBox_3)
         self.horizontalLayout_4 = QtWidgets.QHBoxLayout()
@@ -98,6 +194,8 @@ class Ui_MainWindow(QMainWindow):
         self.statusbar = QtWidgets.QStatusBar(MainWindow)
         self.statusbar.setObjectName("statusbar")
         MainWindow.setStatusBar(self.statusbar)
+
+        self.setup_logger()
 
         self.retranslateUi(MainWindow)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
@@ -209,6 +307,105 @@ class Ui_MainWindow(QMainWindow):
         """
         for widget in self.findChildren(QLabel):
             widget.setStyleSheet(label_style)
+
+    def update_pubkey_path(self):
+        """公钥路径样式调整（圆角同步为4px）"""
+        if self.selected_env == "pre":
+            # 拼接：exe目录 → public_key → pre_env → publickey.pem
+            pubkey_path = self.app_path / "public_key" / "pre_env" / "publickey.pem"
+        else:
+            pubkey_path = self.app_path / "public_key" / "formal_env" / "publickey.pem"
+
+        self.pubkey_path = str(pubkey_path)
+        self.lineEdit_2.setText(self.pubkey_path)
+        if not os.path.exists(pubkey_path):
+            self.lineEdit_2.setStyleSheet("""
+                        QLineEdit {
+                            border: 1px solid #dc3545;
+                            border-radius: 4px; /* 圆角缩小 */
+                            padding: 8px 12px;
+                            font-size: 11px;
+                            background-color: #fff8f8;
+                            color: #dc3545;
+                        }
+                    """)
+            logging.warning(
+                f"当前{'' if self.selected_env == 'pre' else '生产'}环境公钥文件不存在：{pubkey_path}\n"
+                f"请检查是否已在对应目录放置 publickey.pem 文件"
+            )
+        else:
+            self.lineEdit_2.setStyleSheet("""
+                        QLineEdit {
+                            border: 1px solid #dee2e6;
+                            border-radius: 4px; /* 圆角缩小 */
+                            padding: 8px 12px;
+                            font-size: 11px;
+                            background-color: #f8f9fa;
+                            color: #495057;
+                        }
+                    """)
+            logging.info(f"当前公钥文件：{pubkey_path}（校验通过）")
+
+    def set_env(self, env_type: str):
+        self.selected_env = env_type
+        env_name = "预生产" if env_type == "pre" else "生产"
+        logging.info(f"已切换至{env_name}环境")
+        self.update_pubkey_path()
+
+    def select_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "选择文件夹路径")
+        if folder:
+            self.selected_folder = folder
+            self.lineEdit.setText(folder)
+            self.key_files = [
+                os.path.join(root, file)
+                for root, dirs, files in os.walk(folder)
+                for file in files
+                # if file.lower().endswith(".key")
+            ]
+        return self.key_files
+
+    def setup_logger(self):
+        logger = logging.getLogger()
+        logger.setLevel(logging.INFO)
+        logger.handlers.clear()
+
+        qt_handler = QTextEditLogger(self.textEdit)
+        logger.addHandler(qt_handler)
+
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(console_handler)
+
+    def clear_log(self):
+        self.textEdit.clear()
+        logging.info("日志已清空")
+
+    def update_log(self, msg: str):
+        logger = logging.getLogger()
+        if msg.startswith("ERROR - "):
+            error_msg = msg.replace("ERROR - ", "")
+            logger.error(error_msg)
+        else:
+            logger.info(msg)
+
+    def start_encrypt(self):
+        if not self.selected_folder:
+            logging.warning("加密操作取消：未选择待加密文件所在文件夹！")
+            return
+
+        if not os.path.exists(self.pubkey_path):
+            logging.error(f"加密操作取消：当前环境公钥文件不存在：{self.pubkey_path}（请检查文件后重试）")
+            return
+
+        if not self.key_files:
+            logging.warning("加密操作取消：未找到可加密的 .key 文件！")
+            return
+
+        selected_item = self.key_list.currentItem()
+        if not selected_item or "未找到" in selected_item.text():
+            logging.warning("加密操作取消：未选择要加密的 .key 文件！")
+            return
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
