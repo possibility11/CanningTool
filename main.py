@@ -15,8 +15,16 @@ from PyQt5.QtGui import QTextCursor, QPalette, QColor, QFont, QIcon, QPixmap
 import sys  # 导入sys模块
 import logging
 import os
+import glob
 from pathlib import Path
 from typing import List
+import subprocess
+import base64
+import shutil
+from cryptography import x509
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.backends import default_backend
 
 def split_file(input_path: str, chunk_size: int = 200, log_callback=None) -> List[str]:
     log_func = lambda msg: log_callback(msg) if log_callback else None
@@ -124,6 +132,7 @@ def ssl_encrypt(client_key_path: str, pubkey_path: str, output_dir: str, log_cal
 
         output_filename = f"{os.path.splitext(client_key_path)[0]}_enc.key"
         client_enc_key = os.path.join(output_dir, output_filename)
+
         base64_encode_file(encrypted_bin, client_enc_key, log_callback=log_callback)
         log_func(f"Base64编码完成：{output_filename}")
 
@@ -138,6 +147,33 @@ def ssl_encrypt(client_key_path: str, pubkey_path: str, output_dir: str, log_cal
         log_func(f"ERROR - {error_msg}")
         logging.error(error_msg, exc_info=True)
         raise
+
+def extract_certificate_id(cer_file_path: str, log_callback=None) -> str:
+    """
+    从证书文件中提取证书ID
+    注意：这是一个简化版本，实际实现可能需要根据证书格式调整
+    """
+    log_func = lambda msg: log_callback(msg) if log_callback else None
+    log_func(f"开始提取证书ID：{cer_file_path}")
+    try:
+        # 读取证书文件
+        with open(cer_file_path, 'rb') as cert_file:
+            cert_data = cert_file.read()
+        #  解析证书（自动处理PEM/DER格式）
+        if b"-----BEGIN CERTIFICATE-----" in cert_data:
+            cert = x509.load_pem_x509_certificate(cert_data, default_backend())
+        else:
+            cert = x509.load_der_x509_certificate(cert_data, default_backend())
+        # 获取使用者（Subject）信息
+        subject = cert.subject
+        # 获取使用者名称（Common Name）
+        common_name = subject.get_attributes_for_oid(x509.NameOID.COMMON_NAME)
+        if common_name:
+            return common_name[0].value
+        log_func(f"已提取证书ID：{common_name[0].value}")
+    except Exception as e:
+        print(f"提取证书ID时出错: {e}")
+        return None
 
 
 # ------------------------------
@@ -212,9 +248,10 @@ class EncryptThread(QThread):
     finished_signal = pyqtSignal(bool, str)
     log_signal = pyqtSignal(str)
 
-    def __init__(self, client_key_path, pubkey_path, output_dir):
+    def __init__(self, client_key_path, client_cer_path, pubkey_path, output_dir):
         super().__init__()
         self.client_key_path = client_key_path
+        self.client_cer_path = client_cer_path
         self.pubkey_path = pubkey_path
         self.output_dir = output_dir
 
@@ -231,7 +268,48 @@ class EncryptThread(QThread):
             )
             output_filename = f"{os.path.splitext(self.client_key_path)[0]}_enc.key"
             output_path = os.path.join(self.output_dir, output_filename)
-            self.finished_signal.emit(True, f"加密成功！加密文件已保存至：{output_path}")
+
+            # 获取当前工作目录
+            current_dir = os.getcwd()
+            ca_dir = str(os.path.join(current_dir, "ca"))  # 创建ca文件夹
+            if not os.path.exists(ca_dir):
+                os.makedirs(ca_dir)
+            files = glob.glob(os.path.join(ca_dir, "*"))
+            for file in files:
+                if os.path.isfile(file):
+                    os.remove(file)
+            certid = extract_certificate_id(cer_file_path = self.client_cer_path ,log_callback=log_callback)
+            # 新建一个名为"certid.txt"的文件，并将证书ID写如该文件
+            certid_file = os.path.join(ca_dir, "certid.txt")
+            with open(certid_file, "w") as f:
+                f.write(certid)
+                f.close()
+                log_callback(f"已生成证书ID文件：{certid_file}")
+
+            # 将output_dir目录下生成_enc.key的加密文件移动到ca_dir目录下，并删除源文件
+            shutil.move(output_path, ca_dir)
+            log_callback(f"已移动加密文件：{output_path}")
+            # 将_enc.key的加密文件重命名为client.key
+            os.rename(os.path.join(ca_dir, "client_enc.key"), os.path.join(ca_dir, "client.key"))
+            log_callback(f"已重命名加密文件：client_enc.key")
+            # 将client_cer_path文件复制到ca_dir目录下，并重命名为client.cer
+            shutil.copy(self.client_cer_path, os.path.join(ca_dir, "client.cer"))
+            log_callback(f"已复制证书文件：{self.client_cer_path}")
+            # 通过adb pull拉取tuid.txt文件
+            adb_result = subprocess.run([
+                'adb', 'pull',
+                '/back_up/oemdata/tuid.txt',
+                #str(ca_dir / "tuid.txt")
+                str(ca_dir)
+            ], capture_output=True, text=True)
+            if adb_result.returncode == 0:
+                log_callback(f"已拉取tuid.txt文件：{ca_dir / 'tuid.txt'}")
+            else:
+                log_callback(f"拉取tuid.txt文件失败：{adb_result.stderr}")
+
+
+            self.finished_signal.emit(True, f"加密成功！加密文件已保存至：{ca_dir}")
+
         except Exception as e:
             self.finished_signal.emit(False, f"加密失败：{str(e)}")
     def stop(self):
@@ -320,6 +398,9 @@ class Ui_MainWindow(QMainWindow):
         self.horizontalLayout_3.addWidget(self.label_3)
         self.lineEdit_2 = QtWidgets.QLineEdit(self.groupBox_2)
         self.lineEdit_2.setObjectName("lineEdit_2")
+        self.lineEdit_2.setReadOnly(True)
+        self.update_pubkey_path()
+
         self.horizontalLayout_3.addWidget(self.lineEdit_2)
         self.verticalLayout_2.addLayout(self.horizontalLayout_3)
         self.verticalLayout_4.addWidget(self.groupBox_2)
@@ -525,9 +606,12 @@ class Ui_MainWindow(QMainWindow):
             self.key_files = [
                 os.path.join(root, file)
                 for root, dirs, files in os.walk(folder)
+
                 for file in files
-                # if file.lower().endswith(".key")
+                #if file.lower().endswith(".key")
             ]
+            print("ffffffffffffffffffffffff")
+            print(self.key_files)
         return self.key_files
 
     def setup_logger(self):
@@ -568,22 +652,36 @@ class Ui_MainWindow(QMainWindow):
             return
          # 找到self.key_files中以.key结尾的文件
         client_key_path = [file for file in self.key_files if file.lower().endswith(".key")]
+        print("aaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        print(os.path.basename(client_key_path[0]))
+
+        client_cer_path = [file for file in self.key_files if file.lower().endswith(".cer")]
         logging.info(
-            f"确认加密文件：{os.path.basename(client_key_path)}\n"
+            f"确认加密文件：{os.path.basename(client_key_path[0])}\n"
             f"当前环境：{'预生产' if self.selected_env == 'pre' else '生产'}\n"
             f"开始加密流程..."
         )
-        output_dir = os.path.dirname(client_key_path)
-        self.encrypt_thread = EncryptThread(client_key_path, self.pubkey_path, output_dir)
+        output_dir = os.path.dirname(client_key_path[0]) # 获取原始证书文件所在目录
+
+
+        self.encrypt_thread = EncryptThread(client_key_path[0], client_cer_path[0], self.pubkey_path, output_dir)
+
+
+
+
         self.encrypt_thread.finished_signal.connect(self.encrypt_finished)
         self.encrypt_thread.log_signal.connect(self.update_log)
         self.encrypt_thread.start()
+
 
         self.pushButton_2.setEnabled(False)
         self.pushButton_2.setText("加密中...")
         self.pushButton.setEnabled(False)
         self.radioButton.setEnabled(False)
         self.radioButton_2.setEnabled(False)
+
+
+
 
     def update_log(self, msg: str):
         logger = logging.getLogger()
