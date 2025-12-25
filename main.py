@@ -286,35 +286,36 @@ class EncryptThread(QThread):
                 f.close()
                 log_callback(f"已生成证书ID文件：{certid_file}")
 
-            # 将output_dir目录下生成_enc.key的加密文件移动到ca_dir目录下，并删除源文件
+
+            # 将output_dir目录下生成_enc.key的加密文件重命名为client_enc.key并移动到ca_dir目录下
             shutil.move(output_path, ca_dir)
             log_callback(f"已移动加密文件：{output_path}")
-            # 将_enc.key的加密文件重命名为client.key
-            os.rename(os.path.join(ca_dir, "client_enc.key"), os.path.join(ca_dir, "client.key"))
-            log_callback(f"已重命名加密文件：client_enc.key")
+            # 将_enc.key结尾的加密文件重命名为client.key
+            for file in os.listdir(ca_dir):
+                if file.endswith("_enc.key"):
+                    os.rename(os.path.join(ca_dir, file), os.path.join(ca_dir, "client.key"))
+                    log_callback(f"已重命名加密文件：{file}")
+
+            # os.rename(os.path.join(ca_dir, "client_enc.key"), os.path.join(ca_dir, "client.key"))
+            # log_callback(f"已重命名加密文件：client_enc.key")
             # 将client_cer_path文件复制到ca_dir目录下，并重命名为client.cer
             shutil.copy(self.client_cer_path, os.path.join(ca_dir, "client.cer"))
             log_callback(f"已复制证书文件：{self.client_cer_path}")
             # 通过adb pull拉取tuid.txt文件
             adb_result = subprocess.run([
                 'adb', 'pull',
-                '/back_up/oemdata/tuid.txt',
-                #str(ca_dir / "tuid.txt")
-                str(ca_dir)
+                '/back_up/oemdata/changan/ca/tuid.txt',
+                os.path.join(ca_dir, "tuid.txt")
             ], capture_output=True, text=True)
             if adb_result.returncode == 0:
-                log_callback(f"已拉取tuid.txt文件：{ca_dir / 'tuid.txt'}")
+                log_callback(f"已拉取tuid.txt文件：{os.path.join(ca_dir, 'tuid.txt')}")
             else:
                 log_callback(f"拉取tuid.txt文件失败：{adb_result.stderr}")
-
-
-            self.finished_signal.emit(True, f"加密成功！加密文件已保存至：{ca_dir}")
-
+            self.finished_signal.emit(True, f"罐装文件制作成功！罐装文件已保存至：{ca_dir}")
         except Exception as e:
-            self.finished_signal.emit(False, f"加密失败：{str(e)}")
+            self.finished_signal.emit(False, f"罐装文件制作失败：{str(e)}")
     def stop(self):
         self.terminate()
-
 
 class Ui_MainWindow(QMainWindow):
     def __init__(self, parent=None):
@@ -481,7 +482,7 @@ class Ui_MainWindow(QMainWindow):
                 background-color: #2196f3;
                 color: white;
                 border: none;
-                border-radius: 4px; /* 圆角缩小 */
+                border-radius: 4px; 
                 padding: 8px 16px;
                 font-size: 11px;
                 font-weight: 500;
@@ -501,6 +502,7 @@ class Ui_MainWindow(QMainWindow):
                 background-color: #5a6268;
             }
         """
+
         self.pushButton.setStyleSheet(button_style)
         self.pushButton_2.setStyleSheet(button_style)
         self.pushButton_3.setStyleSheet(button_style.replace("QPushButton {", "QPushButton#clear_log_btn {"))
@@ -509,7 +511,7 @@ class Ui_MainWindow(QMainWindow):
         # 输入框样式：圆角调整为4px
         line_edit_style = """
             QLineEdit {
-                border: 1px solid #dee2e6;
+                border: 1px solid #dee2e6; 
                 border-radius: 4px; /* 圆角缩小 */
                 padding: 8px 12px;
                 font-size: 11px;
@@ -652,7 +654,6 @@ class Ui_MainWindow(QMainWindow):
             return
          # 找到self.key_files中以.key结尾的文件
         client_key_path = [file for file in self.key_files if file.lower().endswith(".key")]
-        print("aaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
         print(os.path.basename(client_key_path[0]))
 
         client_cer_path = [file for file in self.key_files if file.lower().endswith(".cer")]
@@ -663,10 +664,7 @@ class Ui_MainWindow(QMainWindow):
         )
         output_dir = os.path.dirname(client_key_path[0]) # 获取原始证书文件所在目录
 
-
         self.encrypt_thread = EncryptThread(client_key_path[0], client_cer_path[0], self.pubkey_path, output_dir)
-
-
 
 
         self.encrypt_thread.finished_signal.connect(self.encrypt_finished)
@@ -681,8 +679,6 @@ class Ui_MainWindow(QMainWindow):
         self.radioButton_2.setEnabled(False)
 
 
-
-
     def update_log(self, msg: str):
         logger = logging.getLogger()
         if msg.startswith("ERROR - "):
@@ -693,7 +689,7 @@ class Ui_MainWindow(QMainWindow):
 
     def encrypt_finished(self, success: bool, msg: str):
         self.pushButton_2.setEnabled(True)
-        self.pushButton_2.setText("开始加密")
+        self.pushButton_2.setText("开始制作罐装文件")
         self.pushButton.setEnabled(True)
         self.radioButton.setEnabled(True)
         self.radioButton_2.setEnabled(True)
@@ -733,5 +729,6 @@ if __name__ == '__main__':
     MainWindow = QtWidgets.QMainWindow()  # 创建窗体对象
     ui = Ui_MainWindow()  # 创建PyQt5设计的窗体对象
     ui.setupUi(MainWindow)  # 调用PyQt5窗体的方法对窗体对象进行初始化设置
+    ui.set_style()
     MainWindow.show()  # 显示窗体
     sys.exit(app.exec_())  # 程序关闭时退出进程
