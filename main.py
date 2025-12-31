@@ -449,20 +449,20 @@ class Ui_MainWindow(QMainWindow):
 
     def set_style(self):
         """统一设置组件样式（修复圆角和标题）"""
-        font = QFont("Microsoft YaHei", 11)
+        font = QFont("Microsoft YaHei", 14)
         self.setFont(font)
 
         # GroupBox 样式：修复标题显示，圆角调整为4px
         group_box_style = """
             QGroupBox {
-                font-size: 12px;
+                font-size: 16px;
                 font-weight: bold;
                 color: #212529;
                 border: 1px solid #dee2e6;
                 border-radius: 4px; /* 圆角缩小 */
                 background-color: #fafafa;
-                margin-top: 12px; /* 增加顶部边距，避免标题被截断 */
-            }margin-top: 18px; /* 增大顶部边距，给标题更多空间 */
+                margin-top: 18px; /* 增加顶部边距，避免标题被截断 */
+            }
             QGroupBox::title {
                 subcontrol-origin: margin;
                 left: 15px;
@@ -470,7 +470,6 @@ class Ui_MainWindow(QMainWindow):
                 background-color: #fafafa;
                 padding: 0 8px;
                 height: 16px; /* 明确标题高度，确保显示完整 */
-                margin-top: 8px; /* 增大顶部边距，给标题更多空间 */
             }
         """
         for widget in self.findChildren(QGroupBox):
@@ -484,22 +483,42 @@ class Ui_MainWindow(QMainWindow):
                 border: none;
                 border-radius: 4px; 
                 padding: 8px 16px;
-                font-size: 11px;
+                font-size: 15px;
                 font-weight: 500;
-                cursor: pointer;
+                min-height: 20px;
+                outline: none; /* 移除焦点轮廓，改用下面:focus状态的边框 */
             }
             QPushButton:hover {
                 background-color: #1976d2;
+                transform: translateY(-1px); /* 轻微上浮效果 */
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* 添加阴影增强悬停感 */
+            }
+            /* 按下状态 */
+            QPushButton:pressed {
+                background-color: #0d47a1;
+                transform: translateY(0); /* 移除上浮效果 */
+                box-shadow: none; /* 移除阴影，模拟按下效果 */
             }
             QPushButton:disabled {
-                background-color: #bbdefb;
+                background-color: #e0e0e0;
+                color: #9e9e9e;
                 cursor: not-allowed;
+                box-shadow: none;
             }
             QPushButton#clear_log_btn {
                 background-color: #6c757d;
             }
             QPushButton#clear_log_btn:hover {
                 background-color: #5a6268;
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            }
+            QPushButton#clear_log_btn:pressed {
+                background-color: #495057;
+                box-shadow: none;
+            }
+            QPushButton#clear_log_btn:disabled {
+                background-color: #e0e0e0;
+                color: #9e9e9e;
             }
         """
 
@@ -514,12 +533,26 @@ class Ui_MainWindow(QMainWindow):
                 border: 1px solid #dee2e6; 
                 border-radius: 4px; /* 圆角缩小 */
                 padding: 8px 12px;
-                font-size: 11px;
+                font-size: 14px;
                 background-color: white;
+                color: #212529;
+                selection-background-color: #2196f3; /* 选中文本背景色 */
+                selection-color: white; /* 选中文本颜色 */
+                min-height: 20px; /* 最小高度 */
+                outline: none; /* 移除默认焦点轮廓 */
+            }
+            /* 悬停状态 */
+            QLineEdit:hover {
+                border-color: #adb5bd; /* 悬停时边框颜色加深 */
             }
             QLineEdit:read-only {
                 background-color: #f8f9fa;
                 color: #495057;
+                /* 只读且焦点状态 */
+            QLineEdit:read-only:focus {
+                border: 1px solid #e9ecef; /* 保持原边框，不显示蓝色焦点 */
+                padding: 8px 12px; /* 恢复原内边距 */
+                box-shadow: none; /* 移除阴影 */
             }
         """
         self.lineEdit.setStyleSheet(line_edit_style)
@@ -528,7 +561,7 @@ class Ui_MainWindow(QMainWindow):
         # 单选框样式（无修改）
         radio_style = """
             QRadioButton {
-                font-size: 11px;
+                font-size: 15px;
                 color: #212529;
                 margin-right: 20px;
             }
@@ -549,8 +582,10 @@ class Ui_MainWindow(QMainWindow):
         # 标签样式（无修改）
         label_style = """
             QLabel {
-                font-size: 11px;
+                font-size: 14px;
                 color: #212529;
+                margin: 0;
+                padding: 0;
             }
         """
         for widget in self.findChildren(QLabel):
@@ -601,7 +636,7 @@ class Ui_MainWindow(QMainWindow):
         self.update_pubkey_path()
 
     def select_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "选择文件夹路径")
+        folder = QFileDialog.getExistingDirectory(self, "选择路径")
         if folder:
             self.selected_folder = folder
             self.lineEdit.setText(folder)
@@ -612,7 +647,6 @@ class Ui_MainWindow(QMainWindow):
                 for file in files
                 #if file.lower().endswith(".key")
             ]
-            print("ffffffffffffffffffffffff")
             print(self.key_files)
         return self.key_files
 
@@ -707,7 +741,7 @@ class Ui_MainWindow(QMainWindow):
         MainWindow.setWindowTitle(_translate("MainWindow", "MainWindow"))
         self.groupBox.setTitle(_translate("MainWindow", "原始证书导入"))
         self.label.setText(_translate("MainWindow", "原始证书位置:"))
-        self.pushButton.setText(_translate("MainWindow", "选择文件夹路径"))
+        self.pushButton.setText(_translate("MainWindow", "选择路径"))
         self.groupBox_2.setTitle(_translate("MainWindow", "环境配置"))
         self.label_2.setText(_translate("MainWindow", "运行环境:"))
         self.radioButton.setText(_translate("MainWindow", "预生产环境"))
