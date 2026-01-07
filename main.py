@@ -730,7 +730,7 @@ class Ui_MainWindow(QMainWindow):
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
-        MainWindow.setWindowTitle(_translate("MainWindow", "MainWindow"))
+        MainWindow.setWindowTitle(_translate("MainWindow", "罐装文件制作工具"))
         self.groupBox.setTitle(_translate("MainWindow", "原始证书导入"))
         self.label.setText(_translate("MainWindow", "原始证书位置:"))
         self.pushButton.setText(_translate("MainWindow", "选择路径"))
@@ -747,6 +747,7 @@ class Ui_MainWindow(QMainWindow):
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
     app.setStyle("Fusion")
+    app.setWindowIcon(QIcon('logo.ico'))
     palette = QPalette()
     palette.setColor(QPalette.ColorRole.Window, QColor(248, 249, 250))
     palette.setColor(QPalette.ColorRole.WindowText, QColor(33, 37, 41))
