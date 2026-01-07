@@ -270,8 +270,9 @@ class EncryptThread(QThread):
             output_path = os.path.join(self.output_dir, output_filename)
 
             # 获取当前工作目录
-            current_dir = os.getcwd()
-            ca_dir = str(os.path.join(current_dir, "ca"))  # 创建ca文件夹
+            #current_dir = os.getcwd()
+            #ca_dir = str(os.path.join(current_dir, "ca"))  # 创建ca文件夹
+            ca_dir = str(os.path.join("D:/", "ca"))
             if not os.path.exists(ca_dir):
                 os.makedirs(ca_dir)
             files = glob.glob(os.path.join(ca_dir, "*"))
@@ -285,7 +286,6 @@ class EncryptThread(QThread):
                 f.write(certid)
                 f.close()
                 log_callback(f"已生成证书ID文件：{certid_file}")
-
 
             # 将output_dir目录下生成_enc.key的加密文件重命名为client_enc.key并移动到ca_dir目录下
             shutil.move(output_path, ca_dir)
@@ -427,8 +427,6 @@ class Ui_MainWindow(QMainWindow):
         self.pushButton_3.setObjectName("pushButton_3")
         self.pushButton_3.setFixedWidth(220)
         self.pushButton_3.clicked.connect(self.clear_log)
-
-
 
         self.horizontalLayout_4.addWidget(self.pushButton_3)
         self.verticalLayout_4.addLayout(self.horizontalLayout_4)
@@ -654,10 +652,8 @@ class Ui_MainWindow(QMainWindow):
         logger = logging.getLogger()
         logger.setLevel(logging.INFO)
         logger.handlers.clear()
-
         qt_handler = QTextEditLogger(self.textEdit)
         logger.addHandler(qt_handler)
-
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         logger.addHandler(console_handler)
@@ -700,11 +696,9 @@ class Ui_MainWindow(QMainWindow):
 
         self.encrypt_thread = EncryptThread(client_key_path[0], client_cer_path[0], self.pubkey_path, output_dir)
 
-
         self.encrypt_thread.finished_signal.connect(self.encrypt_finished)
         self.encrypt_thread.log_signal.connect(self.update_log)
         self.encrypt_thread.start()
-
 
         self.pushButton_2.setEnabled(False)
         self.pushButton_2.setText("加密中...")
@@ -733,8 +727,6 @@ class Ui_MainWindow(QMainWindow):
             logger.info(f"=== {msg} ===")
         else:
             logger.error(f"=== {msg} ===")
-
-
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
